@@ -20,7 +20,7 @@ def _isolate() -> None:
     os.environ["MDPUBS_API_KEY"] = "test-key"
     os.environ.pop("MDPUBS_ALWAYS_MARKERS", None)
     os.environ.pop("MDPUBS_PUBLISH_PLATFORMS", None)
-    os.environ.pop("MDPUBS_ACCOUNT", None)
+    os.environ.pop("MDPUBS_COMPANY", None)
     os.environ.pop("MDPUBS_API_BASE", None)
 
     P.DB_PATH = os.path.join(P.PLUGIN_DIR, f"mdpubs.selftest.{int(time.time())}.sqlite3")
@@ -72,17 +72,17 @@ def run_selftest() -> None:
     assert P.frontmatter_is_private("---\nmdpubs-is-private: false\n---\n") is False
     assert P.frontmatter_is_private("no frontmatter") is None
 
-    # --- unit: account frontmatter injection ---------------------------------
-    assert P.extract_account_marker("<!-- mdpubs:account: 108 Labs -->") == "108-labs"
-    assert P.strip_account_marker("x <!-- mdpubs:account: acme --> y").strip() == "x  y".strip()
-    injected = P.inject_account_frontmatter("# Title\n\nbody", "acme")
-    assert injected.startswith("---\nmdpubs-account: acme\n---\n"), injected
+    # --- unit: company frontmatter injection ---------------------------------
+    assert P.extract_company_marker("<!-- mdpubs:company: 108 Labs -->") == "108-labs"
+    assert P.strip_company_marker("x <!-- mdpubs:company: acme --> y").strip() == "x  y".strip()
+    injected = P.inject_company_frontmatter("# Title\n\nbody", "acme")
+    assert injected.startswith("---\nmdpubs-company: acme\n---\n"), injected
     # Existing frontmatter → key inserted into the block.
-    injected2 = P.inject_account_frontmatter("---\ntitle: X\n---\n\nbody", "acme")
-    assert "mdpubs-account: acme" in injected2 and injected2.count("---") == 2, injected2
+    injected2 = P.inject_company_frontmatter("---\ntitle: X\n---\n\nbody", "acme")
+    assert "mdpubs-company: acme" in injected2 and injected2.count("---") == 2, injected2
     # Content that already declares an account is never overridden.
-    already = "---\nmdpubs-account: original\n---\n\nbody"
-    assert P.inject_account_frontmatter(already, "acme") == already
+    already = "---\nmdpubs-company: original\n---\n\nbody"
+    assert P.inject_company_frontmatter(already, "acme") == already
 
     # --- integration: no-marker pass-through ---------------------------------
     assert P.maybe_publish("plain reply", platform="whatsapp", publish_fn=fake_publish) is None
@@ -131,20 +131,20 @@ def run_selftest() -> None:
     assert sent["title"] == "NDA", sent  # from frontmatter title
 
     # --- integration: account marker → frontmatter + config default ----------
-    acct_reply = "<!-- mdpubs:always -->\n<!-- mdpubs:account: 108labs -->\n# Memo\n\nbody\n"
+    acct_reply = "<!-- mdpubs:always -->\n<!-- mdpubs:company: 108labs -->\n# Memo\n\nbody\n"
     out_acct = P.maybe_publish(acct_reply, session_id="s4", platform="whatsapp", publish_fn=fake_publish)
     assert out_acct, out_acct
     sent = calls[-1]
-    assert "mdpubs-account: 108labs" in sent["content"], sent["content"]
-    assert "mdpubs:account:" not in sent["content"], "account marker must be stripped"
+    assert "mdpubs-company: 108labs" in sent["content"], sent["content"]
+    assert "mdpubs:company:" not in sent["content"], "account marker must be stripped"
 
     # config default account applies when no marker present
-    os.environ["MDPUBS_ACCOUNT"] = "defaultco"
+    os.environ["MDPUBS_COMPANY"] = "defaultco"
     out_def = P.maybe_publish("<!-- mdpubs:always -->\n# NoMarker\n\nbody\n",
                               session_id="s5", platform="whatsapp", publish_fn=fake_publish)
     assert out_def, out_def
-    assert "mdpubs-account: defaultco" in calls[-1]["content"], calls[-1]["content"]
-    os.environ.pop("MDPUBS_ACCOUNT", None)
+    assert "mdpubs-company: defaultco" in calls[-1]["content"], calls[-1]["content"]
+    os.environ.pop("MDPUBS_COMPANY", None)
 
     # --- integration: CLI never publishes ------------------------------------
     before = len(calls)

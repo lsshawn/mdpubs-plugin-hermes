@@ -27,7 +27,7 @@ When a reply contains a publish marker (default `<!-- mdpubs:always -->` or
 2. Detects whether the body is **Markdown or HTML** and publishes with the
    matching `file_extension` so mdpubs renders it correctly.
 3. Detects **e-signable documents** and preserves their signing wiring verbatim.
-4. Files the note under an **mdpubs org/account** if requested.
+4. Files the note under an **mdpubs org/company** if requested.
 5. Publishes to `POST https://mdpubs.com/api/notes`, reads the note's
    **`publicId`** from the response, and replies with
    `title` + `https://mdpubs.com/<publicId>`.
@@ -59,7 +59,7 @@ All of these are HTML comments, stripped from the published body:
 | --- | --- |
 | `<!-- mdpubs:always -->` | Publish this reply. (Also matches bare `mdpubs:always`.) |
 | `<!-- mdpubs:title: My Title -->` | Set the note title explicitly (wins over heading/`<title>`/frontmatter detection). |
-| `<!-- mdpubs:account: acme -->` | File the note under the `acme` org (see **Accounts** below). |
+| `<!-- mdpubs:company: acme -->` | File the note under the `acme` org (see **Company filing** below). |
 
 Title resolution order: title marker → YAML frontmatter `title:` → first HTML
 `<title>`/`<h1>` (HTML docs) → first Markdown heading → first non-trivial line.
@@ -90,19 +90,19 @@ frontmatter and at least one sign-here anchor**, this plugin:
 The plugin never *adds* signing wiring — author that in the document (or with
 the `mdpubs` skill) before it's sent.
 
-## Accounts (orgs)
+## Company (org) filing
 
 mdpubs notes can be filed under an organization ("account") via the schema's
-`mdpubs-account: <slug>` frontmatter key. This plugin resolves the account in
+`mdpubs-company: <slug>` frontmatter key. This plugin resolves the company in
 priority order:
 
-1. `mdpubs-account:` already present in the content's frontmatter — always wins,
+1. `mdpubs-company:` already present in the content's frontmatter — always wins,
    never overridden.
-2. `<!-- mdpubs:account: <slug> -->` marker in the reply.
-3. `default_account` in `config.json` / `MDPUBS_ACCOUNT` env var.
+2. `<!-- mdpubs:company: <slug> -->` marker in the reply.
+3. `default_company` in `config.json` / `MDPUBS_COMPANY` env var.
 
 The resolved slug is injected into the content's frontmatter as
-`mdpubs-account: <slug>` so mdpubs files the note under the real org (this is
+`mdpubs-company: <slug>` so mdpubs files the note under the real org (this is
 stronger than a cosmetic tag). The syncing user must be a member of that org or
 the API rejects the note (and the reply passes through unchanged).
 
@@ -129,7 +129,7 @@ Optional `config.json` next to the plugin (re-read on every hook call):
 {
   "always_publish_markers": ["<!-- mdpubs:always -->", "mdpubs:always"],
   "publish_platforms": ["whatsapp", "webhook"],
-  "default_account": ""
+  "default_company": ""
 }
 ```
 
@@ -143,7 +143,7 @@ Missing file → defaults are used. See `config.example.json`.
 | `MDPUBS_API_BASE` | Override the API base (default `https://mdpubs.com/api`; e.g. `http://localhost:5173/api` for dev). The viewer URL is derived by stripping a trailing `/api` / leading `api.` host. |
 | `MDPUBS_ALWAYS_MARKERS` | Comma-separated markers; **replaces** the config list. |
 | `MDPUBS_PUBLISH_PLATFORMS` | Comma-separated platforms; **replaces** the config list. |
-| `MDPUBS_ACCOUNT` | Default account slug. |
+| `MDPUBS_COMPANY` | Default company slug. |
 
 ## Install
 
@@ -160,7 +160,7 @@ Set `MDPUBS_API_KEY` in `~/.hermes/.env`.
 
 - `plugin.yaml` — manifest
 - `__init__.py` — `register(ctx)` entry point (`ctx.register_hook`)
-- `plugin.py` — hook impl, content typing, signable/account handling, API client, dedupe DB
+- `plugin.py` — hook impl, content typing, signable/company handling, API client, dedupe DB
 - `tests.py` — offline self-tests (fake publish; never hits the real API)
 - `config.json` / `config.example.json` — defaults
 - `mdpubs.sqlite3` — local dedupe DB (auto-created, git-ignored)

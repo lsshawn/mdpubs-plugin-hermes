@@ -23,9 +23,9 @@ What this version handles (vs. the original cupbots/Hermes port):
     (never marker-stripped in a way that touches the signing wiring), and the
     reply flags it as signable. Privacy follows the document's own
     `mdpubs-is-private` frontmatter.
-  - **Account/company**: an optional `<!-- mdpubs:account: SLUG -->` marker (or a
+  - **Company**: an optional `<!-- mdpubs:company: SLUG -->` marker (or a
     config/env default) files the note under an mdpubs org via the schema's
-    `mdpubs-account` frontmatter key.
+    `mdpubs-company` frontmatter key.
 
 Hook: transform_llm_output(response_text, session_id, model, platform) -> str | None
 """
@@ -127,7 +127,7 @@ def load_config(path: Optional[str] = None) -> dict:
     cfg = {
         "always_publish_markers": list(DEFAULT_ALWAYS_MARKERS),
         "publish_platforms": list(DEFAULT_PUBLISH_PLATFORMS),
-        "default_account": "",
+        "default_company": "",
     }
     try:
         with open(path, "r") as f:
@@ -137,8 +137,8 @@ def load_config(path: Optional[str] = None) -> dict:
                 cfg["always_publish_markers"] = [str(x) for x in data["always_publish_markers"]]
             if isinstance(data.get("publish_platforms"), list):
                 cfg["publish_platforms"] = [str(x) for x in data["publish_platforms"]]
-            if isinstance(data.get("default_account"), str):
-                cfg["default_account"] = data["default_account"].strip()
+            if isinstance(data.get("default_company"), str):
+                cfg["default_company"] = data["default_company"].strip()
     except (OSError, ValueError):
         pass
 
@@ -148,9 +148,9 @@ def load_config(path: Optional[str] = None) -> dict:
     env_platforms = os.environ.get("MDPUBS_PUBLISH_PLATFORMS", "").strip()
     if env_platforms:
         cfg["publish_platforms"] = _split_csv(env_platforms)
-    env_account = os.environ.get("MDPUBS_ACCOUNT", "").strip()
-    if env_account:
-        cfg["default_account"] = env_account
+    env_company = os.environ.get("MDPUBS_COMPANY", "").strip()
+    if env_company:
+        cfg["default_company"] = env_company
     return cfg
 
 
@@ -158,7 +158,7 @@ def strip_markers(text: str, markers: list[str]) -> str:
     """Remove all configured publish markers from text. Case-insensitive.
 
     This only removes the *publish* markers (e.g. `mdpubs:always`). It never
-    touches signing wiring (`mdpubs-sign`, `mdpubs-sign-here`) or the account
+    touches signing wiring (`mdpubs-sign`, `mdpubs-sign-here`) or the company
     frontmatter — those are handled separately.
     """
     out = text
@@ -242,23 +242,23 @@ def frontmatter_is_private(text: str) -> Optional[bool]:
 
 
 # ---------------------------------------------------------------------------
-# Account / company frontmatter injection
+# Company frontmatter injection
 # ---------------------------------------------------------------------------
 
-# `<!-- mdpubs:account: 108labs -->` — files the note under an mdpubs org. The
+# `<!-- mdpubs:company: 108labs -->` — files the note under an mdpubs org. The
 # slug is injected into the content's YAML frontmatter as the schema's
-# `mdpubs-account` key so the API resolves the real org (not a cosmetic tag).
-_ACCOUNT_MARKER_RE = re.compile(r"<!--\s*mdpubs:account:\s*(.+?)\s*-->", re.IGNORECASE)
-_ACCOUNT_SLUG_RE = re.compile(r"[^a-z0-9-]+")
+# `mdpubs-company` key so the API resolves the real org (not a cosmetic tag).
+_COMPANY_MARKER_RE = re.compile(r"<!--\s*mdpubs:company:\s*(.+?)\s*-->", re.IGNORECASE)
+_COMPANY_SLUG_RE = re.compile(r"[^a-z0-9-]+")
 
 
 def _sanitize_slug(raw: str) -> str:
-    s = _ACCOUNT_SLUG_RE.sub("-", raw.strip().lower()).strip("-")
+    s = _COMPANY_SLUG_RE.sub("-", raw.strip().lower()).strip("-")
     return s[:64]
 
 
-def extract_account_marker(text: str) -> Optional[str]:
-    m = _ACCOUNT_MARKER_RE.search(text or "")
+def extract_company_marker(text: str) -> Optional[str]:
+    m = _COMPANY_MARKER_RE.search(text or "")
     if m:
         slug = _sanitize_slug(m.group(1))
         if slug:
@@ -266,25 +266,25 @@ def extract_account_marker(text: str) -> Optional[str]:
     return None
 
 
-def strip_account_marker(text: str) -> str:
-    return _ACCOUNT_MARKER_RE.sub("", text or "").strip("\n")
+def strip_company_marker(text: str) -> str:
+    return _COMPANY_MARKER_RE.sub("", text or "").strip("\n")
 
 
-def content_has_account_frontmatter(text: str) -> bool:
-    return bool(re.search(r"^\s*mdpubs-account\s*:", text or "", re.IGNORECASE | re.MULTILINE))
+def content_has_company_frontmatter(text: str) -> bool:
+    return bool(re.search(r"^\s*mdpubs-company\s*:", text or "", re.IGNORECASE | re.MULTILINE))
 
 
-def inject_account_frontmatter(text: str, slug: str) -> str:
-    """Ensure `mdpubs-account: <slug>` is present in the content's frontmatter.
+def inject_company_frontmatter(text: str, slug: str) -> str:
+    """Ensure `mdpubs-company: <slug>` is present in the content's frontmatter.
 
-    - If the content already declares `mdpubs-account`, it wins (never override
+    - If the content already declares `mdpubs-company`, it wins (never override
       an explicit choice) and we return the content unchanged.
     - If a frontmatter block exists, insert the key into it.
     - Otherwise, prepend a new frontmatter block.
     """
-    if not slug or content_has_account_frontmatter(text):
+    if not slug or content_has_company_frontmatter(text):
         return text
-    line = f"mdpubs-account: {slug}"
+    line = f"mdpubs-company: {slug}"
     m = re.match(r"^(\s*---\s*\n)(.*?\n)(---\s*\n)", text, re.DOTALL)
     if m:
         return f"{m.group(1)}{m.group(2)}{line}\n{m.group(3)}{text[m.end():]}"
@@ -493,7 +493,7 @@ def maybe_publish(
     if not should_publish(response_text, cfg):
         return None
 
-    # 1. Strip the publish markers (never the signing/account wiring).
+    # 1. Strip the publish markers (never the signing/company wiring).
     cleaned = strip_markers(response_text, cfg.get("always_publish_markers", []))
 
     # 2. Resolve + strip the explicit title marker.
@@ -501,13 +501,13 @@ def maybe_publish(
     resolved_title = _derive_title(cleaned, file_extension)
     cleaned = _strip_title_marker(cleaned)
 
-    # 3. Resolve account/company: content frontmatter wins, then marker, then
+    # 3. Resolve company: content frontmatter wins, then marker, then
     #    config/env default. Strip the marker from the body, inject the slug.
-    marker_account = extract_account_marker(cleaned)
-    cleaned = strip_account_marker(cleaned)
-    account = marker_account or cfg.get("default_account", "")
-    if account:
-        cleaned = inject_account_frontmatter(cleaned, account)
+    marker_company = extract_company_marker(cleaned)
+    cleaned = strip_company_marker(cleaned)
+    company = marker_company or cfg.get("default_company", "")
+    if company:
+        cleaned = inject_company_frontmatter(cleaned, company)
 
     if not cleaned:
         return None
