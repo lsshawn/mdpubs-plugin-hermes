@@ -6,6 +6,12 @@ returns a short **title + link** in place of the full reply. Built for
 digest, a proposal, an HTML dashboard) is better read on the web than pasted
 into a WhatsApp thread.
 
+> **mdpubs.com is a paid service** for publishing Markdown (and HTML) files as
+> public web pages via a single API call — `markdown → public web page,
+> instantly`. Free tier: 5 publishable files with unlimited views; unlimited
+> files are **$10/month**. This plugin needs an mdpubs account and API key to
+> publish. See [mdpubs.com](https://mdpubs.com).
+
 - **Hook:** `transform_llm_output`
 - **Automatic, not a slash command.** It transforms the final LLM output only
   when the reply carries a publish marker.
@@ -142,7 +148,7 @@ Missing file → defaults are used. See `config.example.json`.
 ## Install
 
 ```bash
-git clone https://github.com/sshawn/hermes-plugin-mdpubs \
+git clone https://github.com/lsshawn/mdpubs-plugin-hermes \
   ~/.hermes/plugins/mdpubs
 pip install -r ~/.hermes/plugins/mdpubs/requirements.txt   # needs `requests`
 hermes plugins enable mdpubs
@@ -174,4 +180,3 @@ hook. It is distinct from the mdpubs **authoring skill**, which guides an
 assistant to *write* signable frontmatter into a document. Use the skill to make
 a document signable; this plugin publishes the result when it's sent on a
 configured platform.
-```
