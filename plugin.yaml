@@ -1,0 +1,7 @@
+name: mdpubs
+version: 2.0.0
+description: "Publish marked assistant replies to mdpubs.com and return a short title + link. Supports Markdown and HTML notes, e-signable documents (mdpubs-sign frontmatter + sign-here anchors), unguessable publicId URLs, and org/account filing via mdpubs-account. CLI passes through unchanged."
+author: "sshawn"
+homepage: "https://github.com/sshawn/hermes-plugin-mdpubs"
+hooks:
+  - transform_llm_output

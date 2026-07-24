@@ -1,0 +1,9 @@
+# Local tracking / dedupe DB (auto-created at runtime)
+mdpubs.sqlite3
+mdpubs.selftest.*
+
+# Local secrets / overrides
+.env
+
+__pycache__/
+*.pyc

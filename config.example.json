@@ -1,0 +1,11 @@
+{
+  "always_publish_markers": [
+    "<!-- mdpubs:always -->",
+    "mdpubs:always"
+  ],
+  "publish_platforms": [
+    "whatsapp",
+    "webhook"
+  ],
+  "default_account": ""
+}
