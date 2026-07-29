@@ -18,11 +18,13 @@ What this version handles (vs. the original cupbots/Hermes port):
   - **HTML support**: content is auto-detected as HTML vs Markdown and published
     with the matching `file_extension` ("html" | "md"), which mdpubs renders
     natively.
-  - **Signable docs**: content carrying `mdpubs-sign` frontmatter and/or
-    `<!-- mdpubs-sign-here: NAME -->` anchors is detected, preserved verbatim
-    (never marker-stripped in a way that touches the signing wiring), and the
-    reply flags it as signable. Privacy follows the document's own
-    `mdpubs-is-private` frontmatter.
+  - **Signable docs**: detection mirrors the server's per-extension parse —
+    markdown via `mdpubs-sign: true` in the leading frontmatter (with a signers
+    list or sign-here anchor), HTML via `<!-- mdpubs-sign: true -->` +
+    `<!-- mdpubs-signer(-open): ... -->` comment markers. Signing wiring is
+    preserved verbatim (never marker-stripped), and the reply flags the doc as
+    signable. Privacy follows the document's own `mdpubs-is-private`
+    frontmatter (markdown only; HTML docs default public).
   - **Company**: an optional `<!-- mdpubs:company: SLUG -->` marker (or a
     config/env default) files the note under an mdpubs org via the schema's
     `mdpubs-company` frontmatter key.
@@ -223,14 +225,33 @@ def _strip_frontmatter_for_sniff(text: str) -> str:
 
 _SIGN_FRONTMATTER_RE = re.compile(r"^\s*mdpubs-sign\s*:\s*true\b", re.IGNORECASE | re.MULTILINE)
 _SIGN_ANCHOR_RE = re.compile(r"<!--\s*mdpubs-sign-here\s*:", re.IGNORECASE)
+_MD_SIGNERS_RE = re.compile(r"^\s*mdpubs-signers(-open)?\s*:", re.IGNORECASE | re.MULTILINE)
+_HTML_SIGN_FLAG_RE = re.compile(r"<!--\s*mdpubs-sign\s*:\s*true\s*-->", re.IGNORECASE)
+_HTML_SIGNER_RE = re.compile(r"<!--\s*mdpubs-signer(-open)?\s*:", re.IGNORECASE)
 _IS_PRIVATE_RE = re.compile(r"^\s*mdpubs-is-private\s*:\s*(true|false)\b", re.IGNORECASE | re.MULTILINE)
+_LEADING_FM_RE = re.compile(r"^\s*---\s*\n(.*?)\n---", re.DOTALL)
 
 
 def is_signable(text: str) -> bool:
-    """A doc is signable if it enables signing AND places at least one anchor."""
+    """Mirror the server's per-extension signing parse (sign.ts parseConfig).
+
+    HTML docs enable signing via comment markers (`<!-- mdpubs-sign: true -->`
+    plus at least one `<!-- mdpubs-signer(-open): ... -->`). Markdown docs use
+    keys in the LEADING frontmatter block only. Sign-here anchors control
+    placement, not enablement — the server falls back to a floating signature
+    panel — so for markdown either an anchor or a signers list qualifies.
+    """
     if not text:
         return False
-    return bool(_SIGN_FRONTMATTER_RE.search(text) and _SIGN_ANCHOR_RE.search(text))
+    if detect_file_extension(text) == "html":
+        return bool(_HTML_SIGN_FLAG_RE.search(text) and _HTML_SIGNER_RE.search(text))
+    m = _LEADING_FM_RE.match(text)
+    if not m:
+        return False
+    block = m.group(1)
+    if not _SIGN_FRONTMATTER_RE.search(block):
+        return False
+    return bool(_MD_SIGNERS_RE.search(block) or _SIGN_ANCHOR_RE.search(text))
 
 
 def frontmatter_is_private(text: str) -> Optional[bool]:

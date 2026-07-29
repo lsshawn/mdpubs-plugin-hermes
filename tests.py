@@ -68,6 +68,22 @@ def run_selftest() -> None:
     assert P.is_signable(signable_doc) is True
     assert P.is_signable("mdpubs-sign: true\n\nno anchor here") is False
     assert P.is_signable("<!-- mdpubs-sign-here: X -->\n\nno frontmatter flag") is False
+    # Markdown flag + signers but NO anchor → still signable (server renders a
+    # floating signature panel when no anchor places the block).
+    assert P.is_signable("---\nmdpubs-sign: true\nmdpubs-signers:\n  - Jane\n---\n\n# Doc\n") is True
+    # Flag must live in the LEADING frontmatter block, not anywhere in the body.
+    assert P.is_signable("# Doc\n\nmdpubs-sign: true\n\n<!-- mdpubs-sign-here: X -->") is False
+    # HTML form: comment markers, parsed server-side when file_extension=html.
+    html_signable = (
+        "<!doctype html><html><body><h1>SOW</h1>"
+        "<!-- mdpubs-sign: true -->"
+        "<!-- mdpubs-signer: Jane Vendor <j@v.com> -->"
+        "<!-- mdpubs-signer-open: Client -->"
+        "</body></html>"
+    )
+    assert P.is_signable(html_signable) is True
+    # HTML flag without any signer marker is not signable.
+    assert P.is_signable("<section><h1>X</h1></section>\n<!-- mdpubs-sign: true -->") is False
     assert P.frontmatter_is_private("---\nmdpubs-is-private: true\n---\n") is True
     assert P.frontmatter_is_private("---\nmdpubs-is-private: false\n---\n") is False
     assert P.frontmatter_is_private("no frontmatter") is None
@@ -129,6 +145,21 @@ def run_selftest() -> None:
     assert sent["is_private"] is True, "private frontmatter must force isPrivate"
     assert "signable" in sent["tags"], sent
     assert sent["title"] == "NDA", sent  # from frontmatter title
+
+    # --- integration: HTML signable publish -----------------------------------
+    html_sign = (
+        "<!-- mdpubs:always -->\n"
+        "<!doctype html><html><body><h1>SOW</h1><p>scope</p>"
+        "<!-- mdpubs-sign: true --><!-- mdpubs-signer-open: Client -->"
+        "</body></html>"
+    )
+    out_hs = P.maybe_publish(html_sign, session_id="s3h", platform="whatsapp", publish_fn=fake_publish)
+    assert out_hs and "sign here" in out_hs, out_hs
+    sent = calls[-1]
+    assert sent["file_extension"] == "html", sent
+    assert "signable" in sent["tags"], sent
+    assert "<!-- mdpubs-sign: true -->" in sent["content"], "HTML signing markers must be preserved"
+    assert sent["is_private"] is False, sent  # HTML docs have no frontmatter → public
 
     # --- integration: account marker → frontmatter + config default ----------
     acct_reply = "<!-- mdpubs:always -->\n<!-- mdpubs:company: 108labs -->\n# Memo\n\nbody\n"

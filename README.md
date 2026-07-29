@@ -74,21 +74,35 @@ prose does **not** flip a note to HTML — detection requires a structural signa
 
 ## E-signable documents
 
-mdpubs turns a document into an e-signable one via YAML frontmatter plus inline
-`<!-- mdpubs-sign-here: NAME -->` anchors (see the `mdpubs` authoring skill /
-[mdpubs.com](https://mdpubs.com)). When a reply carries **`mdpubs-sign: true`
-frontmatter and at least one sign-here anchor**, this plugin:
+mdpubs turns a document into an e-signable one two ways, matching how the
+server parses each file type (see the `mdpubs` authoring skill /
+[mdpubs.com](https://mdpubs.com)):
+
+- **Markdown** — `mdpubs-sign: true` in the leading YAML frontmatter, signers
+  under `mdpubs-signers:` / `mdpubs-signers-open:`, and optional inline
+  `<!-- mdpubs-sign-here: NAME -->` placement anchors (without an anchor the
+  signature block renders in a floating panel).
+- **HTML** — comment markers: `<!-- mdpubs-sign: true -->` plus at least one
+  `<!-- mdpubs-signer: Name <email> -->` or `<!-- mdpubs-signer-open: Label -->`.
+
+When a reply matches either form, this plugin:
 
 - **preserves the signing wiring verbatim** — publish-marker stripping never
   touches `mdpubs-sign`, the signers list, or the anchors;
 - honors the document's own **`mdpubs-is-private`** frontmatter for the note's
-  privacy (defaults to public if unset — private+signable notes are still
-  reachable by link-holders by design);
+  privacy (markdown only; defaults to public if unset — private+signable notes
+  are still reachable by link-holders by design);
 - tags the note `signable` and appends `(sign here ⬆)` to the reply so the
   reader knows the link opens a signing page.
 
 The plugin never *adds* signing wiring — author that in the document (or with
 the `mdpubs` skill) before it's sent.
+
+Note the plugin always **creates** a note; it never updates an existing one.
+An exact retry of the same content returns the original URL (see dedupe), but
+an *edited* document — even one carrying a `mdpubs: <id>` frontmatter key —
+publishes as a brand-new note with a new URL. Signatures collected on the old
+note stay on the old note.
 
 ## Company (org) filing
 
