@@ -231,6 +231,67 @@ def run_selftest() -> None:
     assert P._viewer_base("http://localhost:5173/api") == "http://localhost:5173"
     assert P._viewer_base("https://api.mdpubs.com") == "https://mdpubs.com"
 
+    # --- unit: publication frontmatter ---------------------------------------
+    fm = P.inject_publication_frontmatter("Body.", "Do first, read later",
+                                          "2019-03-26", ["learn"])
+    fm = P.set_frontmatter_key(fm, "mdpubs", "U1aYuj3NgPpv8EQbZYv-e", before="tags")
+    assert fm == (
+        "---\n"
+        "title: 'Do first, read later'\n"
+        "date: '2019-03-26'\n"
+        "mdpubs: U1aYuj3NgPpv8EQbZYv-e\n"
+        "tags:\n"
+        "  - learn\n"
+        "---\n"
+        "\n"
+        "Body."
+    ), repr(fm)
+
+    # content-declared keys win; never overwritten
+    keep = P.inject_publication_frontmatter(
+        "---\ntitle: Mine\nmdpubs-company: 108labs\n---\n\nBody.",
+        "Derived", "2026-01-01", ["learn"])
+    assert "title: Mine" in keep and "title: 'Derived'" not in keep, keep
+    assert "mdpubs-company: 108labs" in keep, keep
+
+    # an already-declared tags list is not duplicated
+    keep_tags = P.inject_publication_frontmatter(
+        "---\ntags:\n  - own\n---\n\nBody.", "T", "2026-01-01", ["learn"])
+    assert "- learn" not in keep_tags, keep_tags
+
+    # apostrophes are YAML-escaped by doubling
+    assert "title: 'Don''t Panic'" in P.inject_publication_frontmatter(
+        "B.", "Don't Panic", "2026-01-01", [])
+
+    # set_frontmatter_key replaces rather than duplicates
+    once = P.set_frontmatter_key("---\nmdpubs: OLD\n---\n\nB.", "mdpubs", "NEW")
+    assert once.count("mdpubs:") == 1 and "NEW" in once, once
+
+    # --- integration: frontmatter is added, then stamped with the publicId ----
+    os.environ["MDPUBS_API_KEY"] = "k" * 64
+    os.environ["MDPUBS_DEFAULT_TAGS"] = "learn"
+    put_body = {}
+    P._update_note = lambda nid, t, c, tg, k, e="md", pr=False: put_body.update(c=c)
+    out_fm = P.maybe_publish("<!-- mdpubs:always -->\n<!-- mdpubs:title: FM Title -->\n\nfm body",
+                             session_id="sfm", platform="whatsapp", publish_fn=fake_publish)
+    assert out_fm, out_fm
+    assert "title: 'FM Title'" in put_body.get("c", ""), put_body
+    assert "mdpubs: " in put_body.get("c", ""), put_body
+    assert "  - learn" in put_body.get("c", ""), put_body
+    os.environ.pop("MDPUBS_DEFAULT_TAGS", None)
+
+    # --- integration: signable docs are never rewritten ----------------------
+    # `mdpubs-sign` alone is not enough — the server also needs a signers list
+    # or a sign-here anchor, so include one or this silently tests nothing.
+    signable_src = ("<!-- mdpubs:always -->\n---\nmdpubs-sign: true\n"
+                    "mdpubs-signers:\n  - a@b.com\n---\n\nsignable fm body")
+    assert P.is_signable(signable_src.split("-->\n", 1)[1]), "fixture is not signable"
+    put_body.clear()
+    out_sign = P.maybe_publish(signable_src, session_id="ssg", platform="whatsapp",
+                               publish_fn=fake_publish)
+    assert out_sign, out_sign
+    assert not put_body, "signable doc must not be PUT-rewritten: %r" % put_body
+
     os.remove(P.DB_PATH)
     print("mdpubs self-test: OK")
 

@@ -7,5 +7,7 @@
     "whatsapp",
     "webhook"
   ],
-  "default_company": ""
+  "default_company": "",
+  "add_publication_frontmatter": true,
+  "default_tags": "learn"
 }

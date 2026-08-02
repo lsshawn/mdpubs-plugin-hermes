@@ -42,6 +42,8 @@ import sqlite3
 import time
 from typing import Optional
 
+HERMES_HOME = os.environ.get("HERMES_HOME") or "/opt/data"
+
 PLUGIN_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(PLUGIN_DIR, "mdpubs.sqlite3")
 CONFIG_PATH = os.path.join(PLUGIN_DIR, "config.json")
@@ -67,7 +69,7 @@ DEFAULT_PUBLISH_PLATFORMS = [
     "webhook",
 ]
 
-HERMES_ENV = os.path.expanduser("~/.hermes/.env")
+HERMES_ENV = os.path.join(HERMES_HOME, ".env")
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +132,8 @@ def load_config(path: Optional[str] = None) -> dict:
         "always_publish_markers": list(DEFAULT_ALWAYS_MARKERS),
         "publish_platforms": list(DEFAULT_PUBLISH_PLATFORMS),
         "default_company": "",
+        "add_publication_frontmatter": True,
+        "default_tags": "",
     }
     try:
         with open(path, "r") as f:
@@ -141,6 +145,12 @@ def load_config(path: Optional[str] = None) -> dict:
                 cfg["publish_platforms"] = [str(x) for x in data["publish_platforms"]]
             if isinstance(data.get("default_company"), str):
                 cfg["default_company"] = data["default_company"].strip()
+            if isinstance(data.get("add_publication_frontmatter"), bool):
+                cfg["add_publication_frontmatter"] = data["add_publication_frontmatter"]
+            if isinstance(data.get("default_tags"), str):
+                cfg["default_tags"] = data["default_tags"].strip()
+            elif isinstance(data.get("default_tags"), list):
+                cfg["default_tags"] = ",".join(str(x) for x in data["default_tags"])
     except (OSError, ValueError):
         pass
 
@@ -153,6 +163,14 @@ def load_config(path: Optional[str] = None) -> dict:
     env_company = os.environ.get("MDPUBS_COMPANY", "").strip()
     if env_company:
         cfg["default_company"] = env_company
+    env_tags = os.environ.get("MDPUBS_DEFAULT_TAGS", "").strip()
+    if env_tags:
+        cfg["default_tags"] = env_tags
+    env_fm = os.environ.get("MDPUBS_ADD_FRONTMATTER", "").strip().lower()
+    if env_fm in ("0", "false", "no"):
+        cfg["add_publication_frontmatter"] = False
+    elif env_fm in ("1", "true", "yes"):
+        cfg["add_publication_frontmatter"] = True
     return cfg
 
 
@@ -310,6 +328,115 @@ def inject_company_frontmatter(text: str, slug: str) -> str:
     if m:
         return f"{m.group(1)}{m.group(2)}{line}\n{m.group(3)}{text[m.end():]}"
     return f"---\n{line}\n---\n\n{text}"
+
+
+# ---------------------------------------------------------------------------
+# Publication frontmatter (title / date / mdpubs / tags)
+# ---------------------------------------------------------------------------
+
+_FRONTMATTER_RE = re.compile(r"^(\s*---\s*\n)(.*?\n)(---\s*\n)", re.DOTALL)
+
+
+def _yaml_quote(value: str) -> str:
+    """Single-quote a YAML scalar, doubling any embedded single quotes."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _has_frontmatter_key(text: str, key: str) -> bool:
+    m = _FRONTMATTER_RE.match(text or "")
+    block = m.group(2) if m else ""
+    return bool(re.search(rf"^\s*{re.escape(key)}\s*:", block, re.IGNORECASE | re.MULTILINE))
+
+
+def build_frontmatter_lines(title: str, date: str, tags: list[str],
+                            note_id: str = "") -> list[str]:
+    """The publication frontmatter block, in a stable key order.
+
+    `mdpubs` is the note's own publicId, which does not exist until the API has
+    accepted the POST — callers inject it afterwards via `set_frontmatter_key`.
+    """
+    lines = [f"title: {_yaml_quote(title)}", f"date: {_yaml_quote(date)}"]
+    if note_id:
+        lines.append(f"mdpubs: {note_id}")
+    if tags:
+        lines.append("tags:")
+        lines.extend(f"  - {t}" for t in tags)
+    return lines
+
+
+def inject_publication_frontmatter(text: str, title: str, date: str,
+                                   tags: list[str], note_id: str = "") -> str:
+    """Add title/date/mdpubs/tags frontmatter, preserving anything already set.
+
+    Keys the content declares itself always win — this never overwrites an
+    explicit choice (same contract as `inject_company_frontmatter`).
+    """
+    new_lines = [
+        line for line in build_frontmatter_lines(title, date, tags, note_id)
+        if not (":" in line and _has_frontmatter_key(text, line.split(":", 1)[0].strip()))
+    ]
+    # Drop an orphaned "tags:" header whose list items were filtered out, and
+    # drop list items if `tags` was already declared upstream.
+    if _has_frontmatter_key(text, "tags"):
+        new_lines = [l for l in new_lines if not l.startswith(("tags:", "  - "))]
+    if not new_lines:
+        return text
+
+    block = "\n".join(new_lines)
+    m = _FRONTMATTER_RE.match(text or "")
+    if m:
+        return f"{m.group(1)}{m.group(2)}{block}\n{m.group(3)}{text[m.end():]}"
+    return f"---\n{block}\n---\n\n{text}"
+
+
+def set_frontmatter_key(text: str, key: str, value: str,
+                        before: str = "") -> str:
+    """Insert or replace a single scalar key in the frontmatter block.
+
+    `before` names a key to insert ahead of (so `mdpubs` can sit above the
+    multi-line `tags:` list rather than being appended after its items).
+    """
+    m = _FRONTMATTER_RE.match(text or "")
+    line = f"{key}: {value}"
+    if not m:
+        return f"---\n{line}\n---\n\n{text}"
+    block = m.group(2)
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*:.*$", re.IGNORECASE | re.MULTILINE)
+    if pattern.search(block):
+        block = pattern.sub(line, block)
+    else:
+        anchor = re.search(rf"^\s*{re.escape(before)}\s*:", block,
+                           re.IGNORECASE | re.MULTILINE) if before else None
+        if anchor:
+            block = block[:anchor.start()] + line + "\n" + block[anchor.start():]
+        else:
+            block = block + line + "\n"
+    return f"{m.group(1)}{block}{m.group(3)}{text[m.end():]}"
+
+
+def _today() -> str:
+    return time.strftime("%Y-%m-%d", time.localtime())
+
+
+def _update_note(note_id: str, title: str, content: str, tags: list[str],
+                 api_key: str, file_extension: str = "md",
+                 is_private: bool = False) -> None:
+    """PUT an already-published note in place (same publicId, same URL)."""
+    import requests
+
+    resp = requests.put(
+        f"{_api_base()}/notes/{note_id}",
+        headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+        json={
+            "title": title,
+            "content": content,
+            "file_extension": file_extension,
+            "tags": tags,
+            "isPrivate": is_private,
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
 
 
 # ---------------------------------------------------------------------------
@@ -536,6 +663,16 @@ def maybe_publish(
     # 4. Signable detection. Signable docs are preserved verbatim; privacy
     #    follows their own `mdpubs-is-private` frontmatter (default public).
     signable = is_signable(cleaned)
+
+    # 4b. Publication frontmatter (title/date/tags). Skipped for signable docs,
+    #     which must stay byte-identical to what the signer agreed to. `mdpubs:`
+    #     is added after publish, once the API has assigned the publicId.
+    #     Done BEFORE the content hash so dedup keys match on replay.
+    resolved_tags = _split_csv(cfg.get("default_tags", "")) if cfg.get("default_tags") else []
+    if not signable and cfg.get("add_publication_frontmatter", True):
+        cleaned = inject_publication_frontmatter(
+            cleaned, resolved_title, _today(), resolved_tags
+        )
     fm_private = frontmatter_is_private(cleaned)
     is_private = bool(fm_private) if fm_private is not None else False
 
@@ -579,6 +716,20 @@ def maybe_publish(
             note_id, url = pub(title, cleaned, tags, api_key)
         except Exception:
             return None
+
+        # The publicId only exists now, so stamp `mdpubs: <id>` into the
+        # frontmatter with a follow-up PUT (same note, same URL). Best-effort:
+        # the note is already live, so a failure here must not lose the reply.
+        if note_id and not signable and cfg.get("add_publication_frontmatter", True):
+            try:
+                stamped = set_frontmatter_key(cleaned, "mdpubs", note_id,
+                                              before="tags")
+                if stamped != cleaned:
+                    _update_note(note_id, title, stamped, tags, api_key,
+                                 file_extension, is_private)
+                    cleaned = stamped
+            except Exception:
+                pass
 
         try:
             conn.execute(
